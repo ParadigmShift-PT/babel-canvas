@@ -48,10 +48,14 @@ public final class Telemetry {
         log.info("DELIVER node={} op={} origin={}", nodeId, opId, originId);
     }
 
-    /** Periodic convergence digest of the local canvas. */
-    public void digest(long tick, long hash, int paintedCells, int activeView) {
-        log.info("DIGEST node={} tick={} hash={} painted={} view={}",
-                nodeId, tick, Long.toHexString(hash), paintedCells, activeView);
+    /**
+     * Periodic convergence digest of the local canvas. {@code delivered} is this
+     * node's in-process count of distinct ops delivered — a robust coverage signal
+     * the analyzer cross-checks against the (higher-volume, loss-prone) DELIVER lines.
+     */
+    public void digest(long tick, long hash, int paintedCells, int activeView, long delivered) {
+        log.info("DIGEST node={} tick={} hash={} painted={} view={} delivered={}",
+                nodeId, tick, Long.toHexString(hash), paintedCells, activeView, delivered);
     }
 
     public void neighborUp(String peer, int activeView) {

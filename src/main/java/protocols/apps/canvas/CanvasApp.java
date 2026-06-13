@@ -149,6 +149,7 @@ public class CanvasApp extends GenericProtocol {
     private boolean snapshotRequested = false;
     private long digestTick = 0;
     private long workloadStartMillis = -1;
+    private long deliveredOps = 0; // distinct ops delivered locally (robust coverage signal)
 
     private WebUi ui;
 
@@ -310,6 +311,7 @@ public class CanvasApp extends GenericProtocol {
     private void uponDeliver(BroadcastDelivery notification, short sourceProto) {
         PaintOp op = CanvasPayload.decode(notification.getPayload());
         canvas.apply(op);
+        deliveredOps++;
         telemetry.deliver(op.getOpId(), op.getOriginId());
     }
 
@@ -317,7 +319,7 @@ public class CanvasApp extends GenericProtocol {
 
     private void uponDigestTimer(DigestTimer timer, long timerId) {
         digestTick++;
-        telemetry.digest(digestTick, canvas.digest(), canvas.paintedCount(), neighbours.size());
+        telemetry.digest(digestTick, canvas.digest(), canvas.paintedCount(), neighbours.size(), deliveredOps);
     }
 
     private void uponWorkloadTimer(WorkloadTimer timer, long timerId) {
