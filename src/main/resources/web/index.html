@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>babel-canvas</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+    <h1>babel-canvas</h1>
+    <span class="tagline">a collaborative pixel canvas over HyParView + eager-push gossip</span>
+</header>
+
+<main>
+    <section class="canvas-pane">
+        <canvas id="canvas" width="480" height="480" title="click to paint"></canvas>
+        <div class="palette" id="palette"></div>
+    </section>
+
+    <aside class="info-pane">
+        <h2>this node</h2>
+        <dl>
+            <dt>id</dt><dd id="node">…</dd>
+            <dt>painted cells</dt><dd id="painted">0</dd>
+            <dt>grid</dt><dd id="grid">…</dd>
+        </dl>
+
+        <h2>active view <span class="muted">(HyParView neighbours)</span></h2>
+        <ul id="neighbours" class="neighbours"><li class="muted">connecting…</li></ul>
+
+        <p class="hint">
+            Paint a cell and watch it gossip to every node. Each node converges to
+            the same canvas under last-writer-wins, regardless of delivery order.
+        </p>
+    </aside>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>

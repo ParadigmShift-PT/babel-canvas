@@ -1,0 +1,99 @@
+name: CI
+
+# babel-canvas is a runnable demo application, NOT a published library. CI:
+#   • builds the executable fat JAR (every push/PR);
+#   • on a version tag, publishes the JAR as a GitHub Release;
+#   • on main, publishes the generated Javadoc to GitHub Pages
+#     (https://paradigmshift-pt.github.io/babel-canvas/).
+#
+# DO NOT add an `mvn deploy` step or any `mvn install` step to this workflow.
+# Publishing this repository to the ParadigmShift Maven repository would make it
+# appear in the libraries section of the website alongside the real reusable
+# artifacts — which is explicitly NOT what this demo is. Distribution is the fat
+# JAR attached to the GitHub Release; the API docs live on GitHub Pages.
+#
+# NOTE: this demo depends on pt.paradigmshift.babel:eager-gossip-broadcast:0.3.0
+# (the PeerAddressResolution work). CI resolves it from the ParadigmShift Maven
+# repository, so that version must be published there before this workflow is green.
+#
+# One-time setup for Pages: repo Settings → Pages → Build and deployment →
+# Source: "GitHub Actions". (Requires a public repo, or a paid plan for private.)
+
+on:
+  push:
+    branches: [ main ]
+    tags:     [ 'v*.*.*' ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # needed to create the Release on tag pushes
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Build executable fat JAR
+        run: mvn package --no-transfer-progress
+
+      - name: Upload demo JAR (workflow artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: babel-canvas
+          path: target/babel-canvas.jar
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: target/babel-canvas.jar
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+
+  # Publish the Javadoc to GitHub Pages → https://paradigmshift-pt.github.io/babel-canvas/
+  docs:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write        # to deploy to Pages
+      id-token: write     # for the Pages OIDC token
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    # Serialise Pages deploys; don't cancel an in-flight one.
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Generate Javadoc
+        run: mvn --no-transfer-progress javadoc:javadoc   # → target/site/apidocs
+
+      # Pages must be enabled ONCE in repo Settings → Pages → Build and deployment
+      # → Source: "GitHub Actions". (The default GITHUB_TOKEN can't create the site
+      # via the API, so auto-enablement doesn't work here.)
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: target/site/apidocs
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,42 @@
+Copyright (c) 2026 ParadigmShift, Lda. All rights reserved.
+
+This software and its associated documentation ("Software") are the proprietary
+property of ParadigmShift, Lda ("ParadigmShift").
+
+PERMITTED USE
+
+You may use, copy, and modify this Software solely for non-commercial purposes,
+including academic research, personal projects, and evaluation.
+
+Commercial use of this Software — including but not limited to incorporating it
+into a product or service offered for a fee, using it to operate an internal
+business system, or distributing it as part of a commercial offering — is
+permitted exclusively to ParadigmShift and to parties that have obtained a
+separate written commercial licence from ParadigmShift.
+
+To obtain a commercial licence, contact: info@paradigmshift.pt
+
+ACKNOWLEDGEMENT
+
+This project (babel-demo) was developed by ParadigmShift, Lda. It is built on the
+ParadigmShift fork of the Babel-Swarm framework and is modelled, in structure and
+style, on the upstream "babel-example" reference application developed in the
+Computer Systems Group of NOVA LINCS at NOVA School of Science and Technology
+(NOVA FCT) — https://novasys.di.fct.unl.pt.
+
+Babel is described in: P. Fouto, P. Á. Costa, N. Preguiça and J. Leitão, "Babel: A
+Framework for Developing Performant and Dependable Distributed Protocols," 2022
+41st International Symposium on Reliable Distributed Systems (SRDS), Vienna,
+Austria, 2022, pp. 146-155, doi: 10.1109/SRDS55811.2022.00022.
+
+Any permitted use or redistribution must retain this copyright notice and the
+acknowledgement above in all copies or substantial portions of the Software.
+
+NO WARRANTY
+
+THIS SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT. IN NO EVENT SHALL
+PARADIGMSHIFT BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN
+AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

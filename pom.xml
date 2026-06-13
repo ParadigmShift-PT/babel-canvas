@@ -1,0 +1,200 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>pt.paradigmshift.babel</groupId>
+    <artifactId>babel-canvas</artifactId>
+    <version>0.1.0</version>
+    <name>ParadigmShift Babel Canvas — Collaborative Pixel Canvas</name>
+
+    <description>
+        A software-only tech demo for the Babel framework: a peer-to-peer
+        collaborative pixel canvas (r/place style) that showcases the
+        ParadigmShift overlay stack working together — HyParView partial-view
+        membership, eager-push gossip broadcast, and (optionally) bloom-filter
+        anti-entropy reconciliation. Paint operations are disseminated by gossip
+        and applied with last-writer-wins per cell, so every node deterministically
+        converges to the same canvas regardless of delivery order. A live web UI
+        renders the shared canvas and this node's active-view neighbours; a headless
+        workload driver and structured telemetry make the same binary usable as the
+        instrument for the babel-canvas-experiments correctness harness. This is a
+        runnable demo for learning and validation, NOT a library: it is intentionally
+        not published to the ParadigmShift Maven repository (there is no
+        distributionManagement block on purpose; do not add one, and do not add an
+        `mvn deploy` step to .github/workflows/ci.yml). Distribution is the
+        executable fat JAR attached to a GitHub Release.
+    </description>
+    <url>https://www.paradigmshift.pt</url>
+
+    <licenses>
+        <license>
+            <name>ParadigmShift Proprietary License</name>
+            <url>https://www.paradigmshift.pt</url>
+            <distribution>repo</distribution>
+            <comments>
+                Non-commercial use is permitted; commercial use requires a written
+                licence from ParadigmShift, Lda. See the LICENSE file for full terms.
+            </comments>
+        </license>
+    </licenses>
+
+    <developers>
+        <developer>
+            <name>João Leitão</name>
+            <email>joao.leitao@paradigmshift.pt</email>
+            <organization>ParadigmShift, Lda</organization>
+            <organizationUrl>https://www.paradigmshift.pt</organizationUrl>
+        </developer>
+        <developer>
+            <name>ParadigmShift</name>
+            <email>info@paradigmshift.pt</email>
+            <organization>ParadigmShift, Lda</organization>
+            <organizationUrl>https://www.paradigmshift.pt</organizationUrl>
+        </developer>
+    </developers>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+
+        <babel.core.version>1.0.1</babel.core.version>
+        <babel.protocols.common.version>1.1.0</babel.protocols.common.version>
+        <hyparview.version>0.2.0</hyparview.version>
+        <!-- Requires the PeerAddressResolution work (offset/fixed/shared modes).
+             That is 0.3.0; the canonical babel-eager-gossip-broadcast must be at
+             >= 0.3.0 and published for CI to resolve this. -->
+        <eager.gossip.version>0.3.0</eager.gossip.version>
+        <antientropy.version>0.2.0</antientropy.version>
+        <log4j.version>2.23.1</log4j.version>
+    </properties>
+
+    <!-- The ParadigmShift Babel libraries resolve from the ParadigmShift Maven
+         repository (read-open, no credentials); the SLF4J->Log4j2 bridge resolves
+         from Maven Central. -->
+    <repositories>
+        <repository>
+            <id>paradigmshift-repository</id>
+            <name>ParadigmShift Repository</name>
+            <url>https://maven.paradigmshift.pt/releases</url>
+        </repository>
+    </repositories>
+
+    <dependencies>
+        <!-- The ParadigmShift fork of Babel-Swarm. Brings babel-network-layer and
+             the logging stack transitively. -->
+        <dependency>
+            <groupId>pt.paradigmshift.babel</groupId>
+            <artifactId>babel-core</artifactId>
+            <version>${babel.core.version}</version>
+        </dependency>
+
+        <!-- Generic protocol abstractions and the shared cross-protocol events:
+             BroadcastRequest/BroadcastDelivery (dissemination), NeighborUp/Down
+             (membership), ChannelAvailableNotification (discovery + shared channel). -->
+        <dependency>
+            <groupId>pt.paradigmshift.babel</groupId>
+            <artifactId>babel-protocols-common</artifactId>
+            <version>${babel.protocols.common.version}</version>
+        </dependency>
+
+        <!-- Overlay membership: HyParView (slot 2500). Source of NeighborUp/Down
+             and the membership channel the canvas reuses for snapshot sync. -->
+        <dependency>
+            <groupId>pt.paradigmshift.babel</groupId>
+            <artifactId>hyparview</artifactId>
+            <version>${hyparview.version}</version>
+        </dependency>
+
+        <!-- Overlay dissemination: eager-push gossip (slot 2400). Carries paint
+             operations as opaque BroadcastRequest payloads. -->
+        <dependency>
+            <groupId>pt.paradigmshift.babel</groupId>
+            <artifactId>eager-gossip-broadcast</artifactId>
+            <version>${eager.gossip.version}</version>
+        </dependency>
+
+        <!-- Overlay reconciliation: bloom-filter anti-entropy (slot 1900). Optional
+             (canvas.antientropy.enabled); recovers paint ops missed by gossip. -->
+        <dependency>
+            <groupId>pt.paradigmshift.babel</groupId>
+            <artifactId>broadcast-antientropy</artifactId>
+            <version>${antientropy.version}</version>
+        </dependency>
+
+        <!-- SLF4J->Log4j2 bridge. A transitive dep logs through SLF4J; with no
+             binding present SLF4J prints "Failed to load StaticLoggerBinder" noise.
+             This routes those logs into our Log4j2 file appender (log4j2.xml). -->
+        <dependency>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-slf4j-impl</artifactId>
+            <version>${log4j.version}</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <sourceDirectory>src/main/java</sourceDirectory>
+
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.12.1</version>
+            </plugin>
+
+            <!-- Javadoc generation. Pinned + doclint disabled so a stray/missing tag
+                 can't fail the build. Run by CI (`mvn javadoc:javadoc`) and published
+                 to GitHub Pages — see .github/workflows/ci.yml. No attach execution:
+                 the demo isn't a Maven artifact, so we don't bundle a -javadoc.jar. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-javadoc-plugin</artifactId>
+                <version>3.6.3</version>
+                <configuration>
+                    <doclint>none</doclint>
+                    <quiet>true</quiet>
+                    <windowtitle>babel-canvas API</windowtitle>
+                    <doctitle>babel-canvas ${project.version} API</doctitle>
+                    <bottom>Copyright &amp;copy; 2026 ParadigmShift, Lda. See LICENSE for terms.</bottom>
+                </configuration>
+            </plugin>
+
+            <!-- Builds the runnable fat JAR (target/babel-canvas.jar, main class
+                 Main) — same approach as babel-demo. This shaded artifact is the
+                 distributable output (attached to GitHub Releases), NOT a
+                 Maven-deployed library. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-assembly-plugin</artifactId>
+                <version>3.7.1</version>
+                <configuration>
+                    <finalName>babel-canvas</finalName>
+                    <appendAssemblyId>false</appendAssemblyId>
+                    <archive>
+                        <manifest>
+                            <mainClass>Main</mainClass>
+                        </manifest>
+                        <manifestEntries>
+                            <Multi-Release>true</Multi-Release>
+                        </manifestEntries>
+                    </archive>
+                    <descriptorRefs>
+                        <descriptorRef>jar-with-dependencies</descriptorRef>
+                    </descriptorRefs>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>assemble-all</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>single</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>

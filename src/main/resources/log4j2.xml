@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Two file appenders, both per-node so several local nodes never clash:
+
+    • File          — human-readable protocol/diagnostic log (babel-canvas-<port>.log).
+                      Tail it to watch the overlay form and gossip flow:
+                          tail -f babel-canvas-6000.log
+    • Telemetry     — machine-readable, one structured event per line prefixed with
+                      epoch millis (babel-canvas-telemetry-<port>.log). This is the
+                      data the babel-canvas-experiments harness parses to compute
+                      reliability / latency / convergence. The 'canvas.telemetry'
+                      logger is additivity=false so these lines do NOT also land in
+                      the human log.
+
+  The per-node filenames come from system properties set by Main BEFORE logging
+  initialises (babelcanvas.logfile / babelcanvas.telemetryfile).
+-->
+<Configuration status="WARN">
+    <Appenders>
+        <File name="File" fileName="${sys:babelcanvas.logfile:-babel-canvas.log}" append="false">
+            <PatternLayout pattern="%d{HH:mm:ss.SSS} [%t] %-5level %logger{36} - %msg%n"/>
+        </File>
+        <File name="Telemetry" fileName="${sys:babelcanvas.telemetryfile:-babel-canvas-telemetry.log}" append="false">
+            <PatternLayout pattern="%d{UNIX_MILLIS} %msg%n"/>
+        </File>
+    </Appenders>
+    <Loggers>
+        <!-- Structured experiment telemetry: its own file, never the human log. -->
+        <Logger name="canvas.telemetry" level="info" additivity="false">
+            <AppenderRef ref="Telemetry"/>
+        </Logger>
+        <!-- Our own code at INFO; the Babel/Netty internals kept quieter. -->
+        <Logger name="protocols" level="info"/>
+        <Logger name="utils" level="info"/>
+        <Logger name="pt.unl.fct.di.novasys" level="warn"/>
+        <Logger name="pt.paradigmshift.babel" level="warn"/>
+        <Root level="info">
+            <AppenderRef ref="File"/>
+        </Root>
+    </Loggers>
+</Configuration>
