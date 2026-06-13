@@ -13,8 +13,8 @@ name: CI
 # JAR attached to the GitHub Release; the API docs live on GitHub Pages.
 #
 # NOTE: this demo depends on pt.paradigmshift.babel:eager-gossip-broadcast:0.3.0
-# (the PeerAddressResolution work). CI resolves it from the ParadigmShift Maven
-# repository, so that version must be published there before this workflow is green.
+# (the PeerAddressResolution work), published to the ParadigmShift Maven repository;
+# CI resolves it from there.
 #
 # One-time setup for Pages: repo Settings → Pages → Build and deployment →
 # Source: "GitHub Actions". (Requires a public repo, or a paid plan for private.)

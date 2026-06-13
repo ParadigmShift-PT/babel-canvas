@@ -150,7 +150,8 @@ Depends on the ParadigmShift Babel libraries (`babel-core`,
 `babel-protocols-common`, `hyparview`, **`eager-gossip-broadcast` ≥ 0.3.0**,
 `broadcast-antientropy`) from the ParadigmShift Maven repository. The
 `eager-gossip-broadcast` ≥ 0.3.0 requirement is the `PeerAddressResolution` work;
-that version must be published before CI can resolve it.
+0.3.0 is published to the ParadigmShift Maven repository, so the local build and CI
+resolve it directly.
 
 ## Project layout
 

@@ -18,16 +18,26 @@ To obtain a commercial licence, contact: info@paradigmshift.pt
 
 ACKNOWLEDGEMENT
 
-This project (babel-demo) was developed by ParadigmShift, Lda. It is built on the
-ParadigmShift fork of the Babel-Swarm framework and is modelled, in structure and
-style, on the upstream "babel-example" reference application developed in the
-Computer Systems Group of NOVA LINCS at NOVA School of Science and Technology
-(NOVA FCT) — https://novasys.di.fct.unl.pt.
+This project (babel-canvas) was developed by ParadigmShift, Lda. It is built on the
+ParadigmShift fork of the Babel-Swarm framework and its HyParView membership and
+eager-push gossip protocols, originally developed in the Computer Systems Group of
+NOVA LINCS at NOVA School of Science and Technology (NOVA FCT),
+https://novasys.di.fct.unl.pt, in the context of the TaRDIS European project,
+https://www.project-tardis.eu.
 
-Babel is described in: P. Fouto, P. Á. Costa, N. Preguiça and J. Leitão, "Babel: A
-Framework for Developing Performant and Dependable Distributed Protocols," 2022
-41st International Symposium on Reliable Distributed Systems (SRDS), Vienna,
-Austria, 2022, pp. 146-155, doi: 10.1109/SRDS55811.2022.00022.
+The protocols and framework this project builds on are described in:
+
+  J. Leitão, J. Pereira and L. Rodrigues, "HyParView: A Membership Protocol for
+  Reliable Gossip-Based Broadcast," 37th Annual IEEE/IFIP International Conference
+  on Dependable Systems and Networks (DSN'07), Edinburgh, UK, 2007, pp. 419-429,
+  doi: 10.1109/DSN.2007.56.
+  Public version: https://asc.di.fct.unl.pt/~jleitao/pdf/dsn07-leitao.pdf
+
+  P. Fouto, P. Á. Costa, N. Preguiça and J. Leitão, "Babel: A Framework for
+  Developing Performant and Dependable Distributed Protocols," 2022 41st
+  International Symposium on Reliable Distributed Systems (SRDS), Vienna, Austria,
+  2022, pp. 146-155, doi: 10.1109/SRDS55811.2022.00022.
+  Public version: https://asc.di.fct.unl.pt/~jleitao/pdf/fouto-srds22.pdf
 
 Any permitted use or redistribution must retain this copyright notice and the
 acknowledgement above in all copies or substantial portions of the Software.

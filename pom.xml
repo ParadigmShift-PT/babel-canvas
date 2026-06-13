@@ -63,9 +63,8 @@
         <babel.core.version>1.0.1</babel.core.version>
         <babel.protocols.common.version>1.1.0</babel.protocols.common.version>
         <hyparview.version>0.2.0</hyparview.version>
-        <!-- Requires the PeerAddressResolution work (offset/fixed/shared modes).
-             That is 0.3.0; the canonical babel-eager-gossip-broadcast must be at
-             >= 0.3.0 and published for CI to resolve this. -->
+        <!-- PeerAddressResolution (offset/fixed/shared) lands in 0.3.0, published to
+             the ParadigmShift Maven repository — build and CI resolve it directly. -->
         <eager.gossip.version>0.3.0</eager.gossip.version>
         <antientropy.version>0.2.0</antientropy.version>
         <log4j.version>2.23.1</log4j.version>
