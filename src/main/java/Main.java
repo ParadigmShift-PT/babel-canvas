@@ -182,23 +182,26 @@ public class Main {
         b.append("  web UI      : ").append(uiEnabled ? "http://localhost:" + uiPort + "/" : "disabled")
                 .append(System.lineSeparator());
 
-        if (props.getProperty(Babel.PAR_DISCOVERY_PROTOCOL) != null) {
+        boolean discoveryOn = props.getProperty(Babel.PAR_DISCOVERY_PROTOCOL) != null;
+        if (discoveryOn) {
             String group = props.getProperty(MulticastDiscoveryProtocol.PAR_DISCOVERY_MULTICAST_ADDRESS,
                     MulticastDiscoveryProtocol.MULTICAST_ADDRESS);
             b.append("  discovery   : multicast ").append(group).append(System.lineSeparator());
         } else {
-            b.append("  discovery   : disabled (no '").append(Babel.PAR_DISCOVERY_PROTOCOL).append("')")
+            b.append("  discovery   : off (pass babel.discovery=… to enable multicast)")
                     .append(System.lineSeparator());
         }
 
         String contact = props.getProperty(HyParView.PAR_CONTACT);
         String bootstrap;
-        if (contact == null || contact.isBlank()) {
-            bootstrap = "auto-discovery — probe the LAN and connect to whoever answers";
-        } else if (contact.trim().equalsIgnoreCase("none")) {
-            bootstrap = "first node (HyParView.contact=none) — I don't probe, but I reply to others";
-        } else {
+        if (contact != null && !contact.isBlank() && !contact.trim().equalsIgnoreCase("none")) {
             bootstrap = "seed from contact " + contact.trim();
+        } else if (contact != null && contact.trim().equalsIgnoreCase("none")) {
+            bootstrap = "first node (HyParView.contact=none) — I don't probe, but I reply to others";
+        } else if (discoveryOn) {
+            bootstrap = "auto-discovery — probe the LAN and connect to whoever answers";
+        } else {
+            bootstrap = "none — set HyParView.contact=<host>:<port> to join, or babel.discovery=… for multicast";
         }
         b.append("  bootstrap   : ").append(bootstrap).append(System.lineSeparator());
         System.out.println(b);

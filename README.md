@@ -26,27 +26,40 @@ protocols working together and as the workload for the
 
 Requires **Java 17+**. Grab `babel-canvas.jar` from the
 [latest release](https://github.com/ParadigmShift-PT/babel-canvas/releases/latest)
-(or [build it](#building-from-source)), then run a node per terminal/machine:
+(or [build it](#building-from-source)), then run one node — it auto-opens its UI:
 
 ```bash
-java -jar babel-canvas.jar                 # first node; opens the UI on http://localhost:8000/
-java -jar babel-canvas.jar babel.port=6010 babel.discovery.unicast.port=1027   # a second node, same machine
+java -jar babel-canvas.jar          # one node; auto-opens its UI at http://localhost:8000/
 ```
 
-On the same LAN nodes discover each other automatically. Open each node's web UI
-(printed in its startup banner) and paint — every canvas updates.
+That paints locally. To connect more nodes, bootstrap the overlay one of two ways
+(a joining node only needs to reach one node that's already in it):
 
-**Two nodes on one machine** need a distinct `babel.port` **spaced by ≥ 10**
-(eager-push binds `babel.port+1` in the default offset mode, so adjacent ports
-would collide), a distinct `babel.discovery.unicast.port`, and they get a
-distinct web-UI port automatically (`babel.port + 2000`). If multicast doesn't
-loop back between local processes, pin both to loopback and seed the second from
-the first:
+**Explicit contact** — works on one machine, across networks, anywhere TCP
+connects; no discovery to configure:
 
 ```bash
-java -jar babel-canvas.jar babel.address=127.0.0.1 babel.port=6000 babel.discovery.unicast.port=1026 HyParView.contact=none
-java -jar babel-canvas.jar babel.address=127.0.0.1 babel.port=6010 babel.discovery.unicast.port=1027 HyParView.contact=127.0.0.1:6000
+# first node — the one others contact
+java -jar babel-canvas.jar babel.address=127.0.0.1 babel.port=6000 HyParView.contact=none
+# second node — dials the first to join
+java -jar babel-canvas.jar babel.address=127.0.0.1 babel.port=6010 HyParView.contact=127.0.0.1:6000
 ```
+
+**Multicast auto-discovery** — no addresses to type, but same-LAN only and opt-in
+(name the discovery protocol on the command line):
+
+```bash
+DISC=babel.discovery=pt.unl.fct.di.novasys.babel.core.protocols.discovery.MulticastDiscoveryProtocol
+java -jar babel-canvas.jar $DISC                                               # machine A
+java -jar babel-canvas.jar $DISC babel.port=6010 babel.discovery.unicast.port=1027   # 2nd node, same host
+```
+
+Each node serves a web UI and opens your browser at it on startup
+(`canvas.ui.open=false` suppresses that). Run several nodes on one machine with a
+distinct `babel.port` **spaced by ≥ 10** (the gossip channel binds `babel.port+1`);
+the web-UI port follows automatically (`babel.port + 2000`). Multicast can be
+blocked locally (VPN, firewall, multiple NICs, macOS Local Network permission) — if
+nodes don't find each other that way, use explicit contact.
 
 ---
 
@@ -91,8 +104,9 @@ harness sweeps parameters.
 |---|---|---|
 | `babel.port` | `6000` | TCP port HyParView binds. Space local nodes by ≥ 10. |
 | `babel.interface` / `babel.address` | auto / — | NIC to bind/announce on, or an explicit IP. No loopback default — use `babel.address=127.0.0.1` for several nodes on one disconnected machine. |
-| `babel.discovery.unicast.port` | `1026` | Per-process discovery socket; **distinct per local node**. |
-| `HyParView.contact` | (absent) | Bootstrap: absent = auto-discover; `none` = first node; `host:port` = seed directly. |
+| `babel.discovery` | (unset) | Opt-in **multicast** LAN auto-discovery — set on the command line to `pt.unl.fct.di.novasys.babel.core.protocols.discovery.MulticastDiscoveryProtocol`. Off by default; bootstrap is via `HyParView.contact`. |
+| `babel.discovery.unicast.port` | `1026` | Per-process discovery socket — only when multicast is enabled; **distinct per local node**. |
+| `HyParView.contact` | (absent) | Bootstrap: `none` = first node; `host:port` = dial that node to join; absent = wait for discovery (only useful with multicast on). |
 | `HyParView.ActiveView` / `PassiveView` / … | 4 / 7 / … | HyParView view sizes and walk lengths — see the config file. |
 | `EagerPushGossipBroadcast.Fanout` | `4` | Peers each paint op is forwarded to. |
 | `EagerPushGossipBroadcast.PeerAddressResolution` | `offset` | How a peer's gossip port is derived: `offset` (membership + `PortOffset`), `fixed` (`PeerPort`), or `shared` (reuse HyParView's channel). |
@@ -104,6 +118,7 @@ harness sweeps parameters.
 | `canvas.width` / `canvas.height` | `48` / `48` | Grid size (must match across nodes). |
 | `canvas.ui.enabled` | `true` | Serve the web UI. |
 | `canvas.ui.port` | `babel.port + 2000` | Web UI port. |
+| `canvas.ui.open` | `true` | Open the system browser at the UI on startup (best-effort; set `false` to suppress, e.g. when running many local nodes). |
 | `canvas.snapshot.sync` | `true` | Fetch the current canvas from a neighbour on join. |
 | `canvas.digest.interval` | `5000` | Period (ms) of convergence-digest telemetry; `≤ 0` disables. |
 | `canvas.antientropy.enabled` | `false` | Load anti-entropy (its own channel at `babel.port + 2`). |

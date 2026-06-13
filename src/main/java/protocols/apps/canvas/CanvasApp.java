@@ -1,6 +1,7 @@
 package protocols.apps.canvas;
 
 import java.io.IOException;
+import java.util.Locale;
 import java.util.Properties;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArraySet;
@@ -85,6 +86,10 @@ public class CanvasApp extends GenericProtocol {
     public static final String PAR_UI_PORT = "canvas.ui.port";
     /** Offset added to the bind port to derive the default UI port. */
     public static final int DEFAULT_UI_PORT_OFFSET = 2000;
+    /** Property key — open the system browser at the UI on startup (best-effort). */
+    public static final String PAR_UI_OPEN = "canvas.ui.open";
+    /** Default for {@link #PAR_UI_OPEN}: {@value}. */
+    public static final String DEFAULT_UI_OPEN = "true";
 
     /** Property key — request a canvas snapshot from a neighbour on join. */
     public static final String PAR_SNAPSHOT_SYNC = "canvas.snapshot.sync";
@@ -129,6 +134,7 @@ public class CanvasApp extends GenericProtocol {
     private final long workloadStartDelay;
     private final boolean uiEnabled;
     private final int uiPort;
+    private final boolean uiOpen;
 
     // For the telemetry START line.
     private final String resolutionMode;
@@ -170,6 +176,7 @@ public class CanvasApp extends GenericProtocol {
         this.uiEnabled = readBool(props, PAR_UI_ENABLED, DEFAULT_UI_ENABLED);
         this.uiPort = readInt(props, PAR_UI_PORT,
                 Integer.toString(myself.getPort() + DEFAULT_UI_PORT_OFFSET));
+        this.uiOpen = readBool(props, PAR_UI_OPEN, DEFAULT_UI_OPEN);
 
         this.workloadEnabled = readBool(props, PAR_WORKLOAD_ENABLED, DEFAULT_WORKLOAD_ENABLED);
         int rate = Math.max(1, readInt(props, PAR_WORKLOAD_RATE, DEFAULT_WORKLOAD_RATE));
@@ -211,7 +218,11 @@ public class CanvasApp extends GenericProtocol {
             ui = new WebUi(uiPort, this);
             try {
                 ui.start();
-                logger.info("Canvas web UI on http://localhost:{}/", uiPort);
+                String url = "http://localhost:" + uiPort + "/";
+                logger.info("Canvas web UI on {}", url);
+                if (uiOpen) {
+                    openInBrowser(url);
+                }
             } catch (IOException e) {
                 logger.error("Failed to start web UI on port {} — continuing headless", uiPort, e);
                 ui = null;
@@ -388,6 +399,31 @@ public class CanvasApp extends GenericProtocol {
 
     public boolean isUiEnabled() {
         return uiEnabled;
+    }
+
+    /**
+     * Best-effort: open the system's default browser at {@code url} so launching a
+     * node pops up its canvas. Shells out to the platform opener
+     * ({@code open} / {@code xdg-open} / {@code rundll32}) rather than touching AWT;
+     * failures are logged and ignored (e.g. on a headless host — open the printed
+     * URL by hand instead). The browser, for security, chooses its own window size;
+     * the page is laid out to sit comfortably at a normal window.
+     */
+    private void openInBrowser(String url) {
+        String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+        String[] cmd;
+        if (os.contains("mac")) {
+            cmd = new String[] {"open", url};
+        } else if (os.contains("win")) {
+            cmd = new String[] {"rundll32", "url.dll,FileProtocolHandler", url};
+        } else {
+            cmd = new String[] {"xdg-open", url};
+        }
+        try {
+            new ProcessBuilder(cmd).start();
+        } catch (IOException e) {
+            logger.debug("Could not auto-open a browser ({}); open {} manually", e.getMessage(), url);
+        }
     }
 
     /* ────────────────────────────── Config helpers ─────────────────────────────── */
