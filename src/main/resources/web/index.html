@@ -3,38 +3,88 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>babel-canvas</title>
+    <title>Paint in Sync — ParadigmShift</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header>
-    <h1>babel-canvas</h1>
-    <span class="tagline">a collaborative pixel canvas over HyParView + eager-push gossip</span>
+<header class="topbar">
+    <div class="logo-group">
+        <svg class="logo-mark" viewBox="0 0 36 36" aria-hidden="true">
+            <defs>
+                <linearGradient id="psg" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0" stop-color="#7B2FBE"/>
+                    <stop offset="1" stop-color="#0ED2B6"/>
+                </linearGradient>
+            </defs>
+            <g fill="none" stroke="url(#psg)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="9,11 15,18 9,25" opacity="0.5"/>
+                <polyline points="15,11 21,18 15,25" opacity="0.75"/>
+                <polyline points="21,11 27,18 21,25" opacity="1"/>
+            </g>
+        </svg>
+        <span class="logo-text">ParadigmShift</span>
+    </div>
+    <div class="nav-status" id="navStatus">
+        <span class="dot" id="statusDot"></span>
+        <span id="statusText">connecting…</span>
+    </div>
 </header>
 
-<main>
-    <section class="canvas-pane">
-        <canvas id="canvas" width="480" height="480" title="click to paint"></canvas>
+<section class="hero">
+    <p class="eyebrow">Tech demo · Canvas</p>
+    <h1>Paint in Sync</h1>
+    <p class="lede">
+        A peer-to-peer <strong>collaborative pixel canvas</strong>. Paint a cell and the
+        operation gossips across the overlay (HyParView&nbsp;+&nbsp;eager-push); every node
+        converges to the same image under last-writer-wins — no server, no coordinator.
+    </p>
+</section>
+
+<main class="layout">
+    <!-- The shared canvas: the headline view. -->
+    <section class="card canvas-card">
+        <div class="card-head">
+            <h2>Canvas</h2>
+            <span class="legend">click to paint</span>
+        </div>
+        <div class="canvas-wrap">
+            <canvas id="canvas" width="480" height="480" title="click to paint"></canvas>
+        </div>
+        <h3 class="sub">palette</h3>
         <div class="palette" id="palette"></div>
     </section>
 
-    <aside class="info-pane">
-        <h2>this node</h2>
-        <dl>
-            <dt>id</dt><dd id="node">…</dd>
-            <dt>painted cells</dt><dd id="painted">0</dd>
-            <dt>grid</dt><dd id="grid">…</dd>
-        </dl>
+    <aside class="side">
+        <!-- This node. -->
+        <section class="card">
+            <h2>This node</h2>
+            <dl class="meta">
+                <dt>id</dt><dd id="node" class="mono">…</dd>
+                <dt>painted</dt><dd id="painted" class="mono">0</dd>
+                <dt>grid</dt><dd id="grid" class="mono">…</dd>
+            </dl>
+            <h3 class="sub">active view <span class="muted">(HyParView)</span></h3>
+            <ul id="neighbours" class="neighbours"><li class="muted">connecting…</li></ul>
+        </section>
 
-        <h2>active view <span class="muted">(HyParView neighbours)</span></h2>
-        <ul id="neighbours" class="neighbours"><li class="muted">connecting…</li></ul>
-
-        <p class="hint">
-            Paint a cell and watch it gossip to every node. Each node converges to
-            the same canvas under last-writer-wins, regardless of delivery order.
-        </p>
+        <!-- How it converges. -->
+        <section class="card">
+            <h2>How it converges</h2>
+            <p class="hint">
+                Paint a cell and watch it gossip to every node. Each node converges to the
+                same canvas under <em>last-writer-wins</em>, regardless of delivery order.
+            </p>
+        </section>
     </aside>
 </main>
+
+<footer class="footer">
+    <span>ParadigmShift · Canvas tech demo</span>
+    <span class="mono">HyParView + eager-push gossip</span>
+</footer>
 
 <script src="app.js"></script>
 </body>

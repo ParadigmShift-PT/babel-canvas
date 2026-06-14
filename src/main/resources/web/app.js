@@ -15,6 +15,17 @@ const nodeEl = document.getElementById("node");
 const paintedEl = document.getElementById("painted");
 const gridEl = document.getElementById("grid");
 const neighboursEl = document.getElementById("neighbours");
+const navStatusEl = document.getElementById("navStatus");
+const statusTextEl = document.getElementById("statusText");
+
+// Brand status pill: teal "live" while the node answers, red "offline" when it stops.
+function setStatus(live) {
+    if (navStatusEl) {
+        navStatusEl.classList.toggle("live", live);
+        navStatusEl.classList.toggle("gone", !live);
+    }
+    if (statusTextEl) statusTextEl.textContent = live ? "live" : "offline";
+}
 
 let gridW = 48, gridH = 48;
 let cellPx = canvas.width / gridW;
@@ -101,9 +112,13 @@ async function poll() {
             const state = await resp.json();
             render(state);
             renderInfo(state);
+            setStatus(true);
+        } else {
+            setStatus(false);
         }
     } catch (e) {
         // Node not ready / transient — keep polling.
+        setStatus(false);
     }
 }
 
