@@ -23,10 +23,12 @@ import org.apache.logging.log4j.Logger;
  *       active-view bound; {@code NEIGHBOR_*} churn; {@code peers} gives a time-aligned
  *       active-view set for symmetry;</li>
  *   <li><b>gossip vs. repair</b> — {@code SYNC_MERGE applied} counts ops a node obtained from a
- *       snapshot (and AE) rather than gossip {@code DELIVER}, so coverage can be split into the
- *       eager-push share and the state-reconciliation share;</li>
- *   <li><b>readiness</b> — {@code PAINT_START stable} says whether the overlay was settled when a
- *       node began broadcasting (an unsettled start loses gossip information).</li>
+ *       snapshot rather than gossip {@code DELIVER}, so coverage can be split into the
+ *       eager-push share and the snapshot-reconciliation share;</li>
+ *   <li><b>start coordination</b> — {@code PAINT_START trigger} is {@code control} (the experiment
+ *       script wrote RUN once the whole system had settled) or {@code timer} (legacy start-delay);
+ *       {@code view}/{@code sinceBootMs} let the analyzer confirm the overlay was formed when
+ *       broadcasting began. {@code WORKLOAD_STOP} marks the end of painting.</li>
  * </ul>
  */
 public final class Telemetry {
@@ -85,7 +87,8 @@ public final class Telemetry {
                 nodeId, activeView, sinceBootMs, trigger);
     }
 
-    /** The local node stopped generating paint ops (on the script's STOP, before drain). */
+    /** The local node stopped generating paint ops — on the script's STOP (or the in-node
+     *  duration safety-cap), before the drain window. Deliveries keep flowing afterwards. */
     public void workloadStop(long paintedMs) {
         log.info("WORKLOAD_STOP node={} paintedMs={}", nodeId, paintedMs);
     }

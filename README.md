@@ -128,7 +128,10 @@ automated, headless runs.
 | `canvas.digest.interval` | `5000` | Period (ms) of convergence-digest telemetry; `≤ 0` disables. |
 | `canvas.antientropy.enabled` | `false` | Load anti-entropy (its own channel at `babel.port + 2`). |
 | `canvas.workload.enabled` | `false` | Headless random-paint driver (for experiments; no UI needed). |
-| `canvas.workload.rate` / `.duration` / `.startDelay` | `2` / `0` / `5000` | Ops/sec, run length (ms; `0` = unbounded), and warm-up delay. |
+| `canvas.workload.rate` / `.duration` | `2` / `0` | Ops/sec, and run length (ms; `0` = unbounded — in coordinated mode `duration` is a safety cap, the orchestrator's STOP is authoritative). |
+| `canvas.workload.controlFile` | `` (empty) | If set, the node polls this shared file and paints only between the orchestrator's `RUN` and `STOP` — so an experiment script can start/stop the whole fleet together once it has settled. Empty = legacy single-timer mode. |
+| `canvas.workload.controlPollMs` | `250` | How often (ms) to poll `controlFile` in coordinated mode. |
+| `canvas.workload.startDelay` | `5000` | Warm-up delay before the first paint. **Legacy/fallback only** — ignored when `controlFile` is set. |
 
 ---
 
@@ -136,7 +139,8 @@ automated, headless runs.
 
 Alongside the human-readable protocol log (`babel-canvas-<port>.log`), each node
 writes a small machine-readable telemetry file (`babel-canvas-telemetry-<port>.log`)
-— one structured event per line (`BROADCAST` / `DELIVER` / `DIGEST` / `NEIGHBOR_*`).
+— one structured event per line (`BROADCAST` / `DELIVER` / `DIGEST` / `NEIGHBOR_*` /
+`PAINT_START` / `WORKLOAD_STOP` / `SYNC_*`, among others).
 That's enough to measure, automatically, that the demo really does what it claims:
 that every paint reaches every node (reliability), how fast (latency), and that all
 nodes converge to the same image — enough for an external driver to verify,
@@ -169,7 +173,7 @@ src/main/java/
     PixelCanvas.java                      LWW grid + convergence digest + snapshot
     messages/CanvasSyncMessage.java       point-to-point snapshot request/reply
     telemetry/Telemetry.java              structured experiment events
-    timers/{DigestTimer,WorkloadTimer}.java
+    timers/{DigestTimer,WorkloadTimer,ControlTimer}.java
     ui/WebUi.java                         embedded HTTP server (JDK built-in)
   utils/InterfaceToIp.java                bind-address resolution (shared with babel-demo)
 src/main/resources/

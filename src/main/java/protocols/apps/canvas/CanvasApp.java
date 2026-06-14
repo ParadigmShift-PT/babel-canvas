@@ -116,7 +116,9 @@ public class CanvasApp extends GenericProtocol {
     public static final String PAR_WORKLOAD_DURATION = "canvas.workload.duration";
     /** Default for {@link #PAR_WORKLOAD_DURATION}: {@value} ms. */
     public static final String DEFAULT_WORKLOAD_DURATION = "0";
-    /** Property key — delay (ms) before the first workload paint, to let the overlay form. */
+    /** Property key — delay (ms) before the first workload paint, to let the overlay form.
+     *  Legacy/fallback path only: ignored when {@link #PAR_WORKLOAD_CONTROL_FILE} is set
+     *  (then the orchestrator's RUN/STOP drives start/stop). */
     public static final String PAR_WORKLOAD_START_DELAY = "canvas.workload.startDelay";
     /** Default for {@link #PAR_WORKLOAD_START_DELAY}: {@value} ms. */
     public static final String DEFAULT_WORKLOAD_START_DELAY = "5000";
