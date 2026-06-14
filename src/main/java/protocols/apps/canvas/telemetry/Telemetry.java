@@ -76,11 +76,18 @@ public final class Telemetry {
         log.info("NEIGHBOR_DOWN node={} peer={} view={}", nodeId, peer, activeView);
     }
 
-    /** The local node began its paint workload. {@code stable} is whether the overlay
-     *  met the readiness gate (view filled, churn quiesced) or the wait timed out first. */
-    public void paintStart(int activeView, long sinceBootMs, boolean stable) {
-        log.info("PAINT_START node={} view={} sinceBootMs={} stable={}",
-                nodeId, activeView, sinceBootMs, stable);
+    /** The local node began its paint workload. {@code trigger} is {@code control} (the
+     *  experiment script's coordinated RUN, after the whole system settled) or {@code timer}
+     *  (legacy/demo start-delay). {@code view} at start lets the analyzer check that the
+     *  overlay was actually formed when broadcasting began. */
+    public void paintStart(int activeView, long sinceBootMs, String trigger) {
+        log.info("PAINT_START node={} view={} sinceBootMs={} trigger={}",
+                nodeId, activeView, sinceBootMs, trigger);
+    }
+
+    /** The local node stopped generating paint ops (on the script's STOP, before drain). */
+    public void workloadStop(long paintedMs) {
+        log.info("WORKLOAD_STOP node={} paintedMs={}", nodeId, paintedMs);
     }
 
     /** This node asked {@code peer} for a canvas snapshot (point-to-point, once it has a neighbour). */

@@ -1,6 +1,8 @@
 package protocols.apps.canvas;
 
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Locale;
 import java.util.Properties;
 import java.util.UUID;
@@ -12,8 +14,8 @@ import org.apache.logging.log4j.Logger;
 
 import protocols.apps.canvas.messages.CanvasSyncMessage;
 import protocols.apps.canvas.telemetry.Telemetry;
+import protocols.apps.canvas.timers.ControlTimer;
 import protocols.apps.canvas.timers.DigestTimer;
-import protocols.apps.canvas.timers.ReadinessTimer;
 import protocols.apps.canvas.timers.WorkloadTimer;
 import protocols.apps.canvas.ui.WebUi;
 import pt.paradigmshift.babel.eagerpush.EagerPushGossipBroadcast;
@@ -119,28 +121,23 @@ public class CanvasApp extends GenericProtocol {
     /** Default for {@link #PAR_WORKLOAD_START_DELAY}: {@value} ms. */
     public static final String DEFAULT_WORKLOAD_START_DELAY = "5000";
 
-    // ── Readiness gate ───────────────────────────────────────────────────────────
-    // Past the start-delay floor, defer the first paint until the LOCAL overlay has
-    // settled, so we don't broadcast onto a half-formed view and lose information that
-    // only state reconciliation could later recover. The gate is OFF (legacy behaviour:
-    // paint exactly at startDelay) when stabilizeView <= 0 and stabilizeQuietMs <= 0.
+    // ── Orchestrator-coordinated start/stop ──────────────────────────────────────
+    // Local-view stability is NOT a safe trigger: a node whose own view has settled may
+    // start emitting while OTHER nodes are still joining, and those joiners miss its early
+    // ops. So the workload is driven EXTERNALLY by the experiment script: every node lets
+    // the whole system settle, then the script writes RUN to a shared control file (the
+    // bind-mounted /logs) and all nodes begin together; later it writes STOP, drains
+    // in-transit messages, and only then tears nodes down. When no control file is set the
+    // node falls back to the legacy single startDelay timer (interactive/demo use).
 
-    /** Property key — require at least this many active-view neighbours before painting; {@code <= 0} disables. */
-    public static final String PAR_WORKLOAD_STABILIZE_VIEW = "canvas.workload.stabilizeView";
-    /** Default for {@link #PAR_WORKLOAD_STABILIZE_VIEW}: {@value} (gate off). */
-    public static final String DEFAULT_WORKLOAD_STABILIZE_VIEW = "0";
-    /** Property key — require no neighbour churn for this long (ms) before painting; {@code <= 0} disables. */
-    public static final String PAR_WORKLOAD_STABILIZE_QUIET_MS = "canvas.workload.stabilizeQuietMs";
-    /** Default for {@link #PAR_WORKLOAD_STABILIZE_QUIET_MS}: {@value} ms (gate off). */
-    public static final String DEFAULT_WORKLOAD_STABILIZE_QUIET_MS = "0";
-    /** Property key — start painting anyway after waiting this long (ms) past the floor for the gate. */
-    public static final String PAR_WORKLOAD_STABILIZE_TIMEOUT_MS = "canvas.workload.stabilizeTimeoutMs";
-    /** Default for {@link #PAR_WORKLOAD_STABILIZE_TIMEOUT_MS}: {@value} ms. */
-    public static final String DEFAULT_WORKLOAD_STABILIZE_TIMEOUT_MS = "60000";
-    /** Property key — how often (ms) to re-check readiness while gating. */
-    public static final String PAR_WORKLOAD_STABILIZE_CHECK_MS = "canvas.workload.stabilizeCheckMs";
-    /** Default for {@link #PAR_WORKLOAD_STABILIZE_CHECK_MS}: {@value} ms. */
-    public static final String DEFAULT_WORKLOAD_STABILIZE_CHECK_MS = "500";
+    /** Property key — shared control file (RUN/STOP) the experiment script drives; empty = legacy timer mode. */
+    public static final String PAR_WORKLOAD_CONTROL_FILE = "canvas.workload.controlFile";
+    /** Default for {@link #PAR_WORKLOAD_CONTROL_FILE}: {@value} (empty → legacy timer mode). */
+    public static final String DEFAULT_WORKLOAD_CONTROL_FILE = "";
+    /** Property key — how often (ms) to poll the control file in coordinated mode. */
+    public static final String PAR_WORKLOAD_CONTROL_POLL_MS = "canvas.workload.controlPollMs";
+    /** Default for {@link #PAR_WORKLOAD_CONTROL_POLL_MS}: {@value} ms. */
+    public static final String DEFAULT_WORKLOAD_CONTROL_POLL_MS = "250";
 
     private final Host myself;
     private final String nodeId;
@@ -156,11 +153,9 @@ public class CanvasApp extends GenericProtocol {
     private final long workloadPeriodMs;
     private final long workloadDuration;
     private final long workloadStartDelay;
-    private final int stabilizeView;
-    private final long stabilizeQuietMs;
-    private final long stabilizeTimeoutMs;
-    private final long stabilizeCheckMs;
-    private final boolean gateEnabled;
+    private final String controlFile;
+    private final long controlPollMs;
+    private final boolean controlMode;
     private final boolean uiEnabled;
     private final int uiPort;
     private final boolean uiOpen;
@@ -177,10 +172,10 @@ public class CanvasApp extends GenericProtocol {
     private boolean channelReady = false;
     private boolean snapshotRequested = false;
     private long digestTick = 0;
-    private long bootMillis = -1;          // init() wall-clock — origin for readiness timing
-    private long lastChurnMillis = -1;     // last NeighborUp/Down — feeds the readiness quiet check
-    private long readinessStartMillis = -1; // first readiness poll — origin for the gate timeout
+    private long bootMillis = -1;          // init() wall-clock — origin for paint-start timing
     private boolean workloadStarted = false;
+    private boolean workloadStopped = false;
+    private long workloadTimerId = -1;
     private long workloadStartMillis = -1;
     private long deliveredOps = 0; // distinct ops delivered via gossip (robust coverage signal)
 
@@ -217,11 +212,9 @@ public class CanvasApp extends GenericProtocol {
         this.workloadPeriodMs = Math.max(1, 1000L / rate);
         this.workloadDuration = readLong(props, PAR_WORKLOAD_DURATION, DEFAULT_WORKLOAD_DURATION);
         this.workloadStartDelay = readLong(props, PAR_WORKLOAD_START_DELAY, DEFAULT_WORKLOAD_START_DELAY);
-        this.stabilizeView = readInt(props, PAR_WORKLOAD_STABILIZE_VIEW, DEFAULT_WORKLOAD_STABILIZE_VIEW);
-        this.stabilizeQuietMs = readLong(props, PAR_WORKLOAD_STABILIZE_QUIET_MS, DEFAULT_WORKLOAD_STABILIZE_QUIET_MS);
-        this.stabilizeTimeoutMs = readLong(props, PAR_WORKLOAD_STABILIZE_TIMEOUT_MS, DEFAULT_WORKLOAD_STABILIZE_TIMEOUT_MS);
-        this.stabilizeCheckMs = Math.max(1, readLong(props, PAR_WORKLOAD_STABILIZE_CHECK_MS, DEFAULT_WORKLOAD_STABILIZE_CHECK_MS));
-        this.gateEnabled = stabilizeView > 0 || stabilizeQuietMs > 0;
+        this.controlFile = props.getProperty(PAR_WORKLOAD_CONTROL_FILE, DEFAULT_WORKLOAD_CONTROL_FILE).trim();
+        this.controlPollMs = Math.max(1, readLong(props, PAR_WORKLOAD_CONTROL_POLL_MS, DEFAULT_WORKLOAD_CONTROL_POLL_MS));
+        this.controlMode = !controlFile.isEmpty();
 
         this.resolutionMode = props.getProperty(EagerPushGossipBroadcast.PAR_PEER_ADDRESS_RESOLUTION,
                 EagerPushGossipBroadcast.DEFAULT_PEER_ADDRESS_RESOLUTION);
@@ -238,7 +231,7 @@ public class CanvasApp extends GenericProtocol {
 
         registerTimerHandler(DigestTimer.TIMER_ID, this::uponDigestTimer);
         registerTimerHandler(WorkloadTimer.TIMER_ID, this::uponWorkloadTimer);
-        registerTimerHandler(ReadinessTimer.TIMER_ID, this::uponReadinessTimer);
+        registerTimerHandler(ControlTimer.TIMER_ID, this::uponControlTimer);
     }
 
     @Override
@@ -250,18 +243,18 @@ public class CanvasApp extends GenericProtocol {
             setupPeriodicTimer(new DigestTimer(), digestInterval, digestInterval);
         }
         if (workloadEnabled) {
-            logger.info("Headless workload: {} op(s) every {} ms, start +{} ms, duration {}{}",
-                    1, workloadPeriodMs, workloadStartDelay,
-                    workloadDuration > 0 ? workloadDuration + " ms" : "unbounded",
-                    gateEnabled ? " — gated on view>=" + stabilizeView + ", quiet " + stabilizeQuietMs
-                            + "ms (cap " + stabilizeTimeoutMs + "ms)" : "");
-            if (gateEnabled) {
-                // Past the start-delay floor, poll readiness; uponReadinessTimer begins
-                // painting once the local overlay settles, or when the cap fires.
-                setupPeriodicTimer(new ReadinessTimer(), workloadStartDelay, stabilizeCheckMs);
+            if (controlMode) {
+                // Coordinated mode: the experiment script writes RUN/STOP to controlFile
+                // once the whole system has settled. Poll it; begin/stop on command.
+                logger.info("Headless workload: {} op(s) every {} ms, coordinated via {} (poll {} ms)",
+                        1, workloadPeriodMs, controlFile, controlPollMs);
+                setupPeriodicTimer(new ControlTimer(), controlPollMs, controlPollMs);
             } else {
-                // Legacy/demo path: paint exactly at the floor.
-                setupTimer(new ReadinessTimer(), workloadStartDelay);
+                // Legacy/demo path: start painting once, at the start-delay floor.
+                logger.info("Headless workload: {} op(s) every {} ms, start +{} ms, duration {}",
+                        1, workloadPeriodMs, workloadStartDelay,
+                        workloadDuration > 0 ? workloadDuration + " ms" : "unbounded");
+                setupTimer(new ControlTimer(), workloadStartDelay);
             }
         }
         if (uiEnabled) {
@@ -308,7 +301,6 @@ public class CanvasApp extends GenericProtocol {
     private void uponNeighborUp(NeighborUp notification, short sourceProto) {
         Host h = notification.getPeer();
         neighbours.add(h);
-        lastChurnMillis = System.currentTimeMillis();
         telemetry.neighborUp(hostId(h), neighbours.size());
         maybeRequestSnapshot();
     }
@@ -316,7 +308,6 @@ public class CanvasApp extends GenericProtocol {
     private void uponNeighborDown(NeighborDown notification, short sourceProto) {
         Host h = notification.getPeer();
         neighbours.remove(h);
-        lastChurnMillis = System.currentTimeMillis();
         telemetry.neighborDown(hostId(h), neighbours.size());
     }
 
@@ -399,50 +390,59 @@ public class CanvasApp extends GenericProtocol {
     }
 
     /**
-     * Readiness gate (see {@link ReadinessTimer}). When gating is on this fires
-     * periodically after the start-delay floor: it begins painting as soon as the local
-     * active view is filled and neighbour churn has quiesced, or when the timeout cap
-     * elapses (then flagged unstable). When gating is off it is a one-shot that just
-     * begins painting at the floor.
+     * Workload control (see {@link ControlTimer}). In coordinated mode this fires
+     * periodically and reads the shared control file the experiment script drives: it
+     * begins painting on {@code RUN} (all nodes together, once the whole system has
+     * settled) and ceases on {@code STOP}. In legacy/demo mode it is a one-shot that just
+     * begins painting at the start-delay floor.
      */
-    private void uponReadinessTimer(ReadinessTimer timer, long timerId) {
-        if (workloadStarted) {
-            cancelTimer(timerId);
+    private void uponControlTimer(ControlTimer timer, long timerId) {
+        if (!controlMode) {
+            beginPainting("timer");     // one-shot legacy/demo start
             return;
         }
-        if (!gateEnabled) {
-            beginPainting(true);
-            return;
+        String state = readControlState();
+        if ("RUN".equals(state) && !workloadStarted) {
+            beginPainting("control");
+        } else if ("STOP".equals(state) && workloadStarted && !workloadStopped) {
+            stopPainting();
+            cancelTimer(timerId);       // nothing more to watch for
         }
-        long now = System.currentTimeMillis();
-        if (readinessStartMillis < 0) {
-            readinessStartMillis = now;
-        }
-        boolean viewReady = neighbours.size() >= stabilizeView;
-        boolean quietReady = stabilizeQuietMs <= 0
-                || (lastChurnMillis >= 0 && now - lastChurnMillis >= stabilizeQuietMs);
-        boolean timedOut = now - readinessStartMillis >= stabilizeTimeoutMs;
-        if ((viewReady && quietReady) || timedOut) {
-            if (timedOut && !(viewReady && quietReady)) {
-                logger.warn("Readiness gate timed out after {} ms (view={}, quiet={}) — painting anyway",
-                        now - readinessStartMillis, neighbours.size(),
-                        lastChurnMillis < 0 ? "n/a" : (now - lastChurnMillis) + "ms");
-            }
-            cancelTimer(timerId);
-            beginPainting(viewReady && quietReady);
+    }
+
+    /** Read the control file's trimmed contents, or {@code ""} on any error (treated as WAIT). */
+    private String readControlState() {
+        try {
+            return Files.readString(Path.of(controlFile)).trim();
+        } catch (IOException | RuntimeException e) {
+            return "";                  // not written yet / transient — keep waiting
         }
     }
 
     /** Emit PAINT_START and kick off the paint workload (idempotent). */
-    private void beginPainting(boolean stable) {
+    private void beginPainting(String trigger) {
         if (workloadStarted) {
             return;
         }
         workloadStarted = true;
         long sinceBoot = bootMillis < 0 ? -1 : System.currentTimeMillis() - bootMillis;
-        telemetry.paintStart(neighbours.size(), sinceBoot, stable);
-        logger.info("Painting begins: view={} sinceBoot={}ms stable={}", neighbours.size(), sinceBoot, stable);
-        setupPeriodicTimer(new WorkloadTimer(), 0, workloadPeriodMs);
+        telemetry.paintStart(neighbours.size(), sinceBoot, trigger);
+        logger.info("Painting begins ({}): view={} sinceBoot={}ms", trigger, neighbours.size(), sinceBoot);
+        workloadTimerId = setupPeriodicTimer(new WorkloadTimer(), 0, workloadPeriodMs);
+    }
+
+    /** Stop generating paint ops (deliveries keep flowing); idempotent. */
+    private void stopPainting() {
+        if (!workloadStarted || workloadStopped) {
+            return;
+        }
+        workloadStopped = true;
+        if (workloadTimerId >= 0) {
+            cancelTimer(workloadTimerId);
+        }
+        long painted = workloadStartMillis < 0 ? -1 : System.currentTimeMillis() - workloadStartMillis;
+        telemetry.workloadStop(painted);
+        logger.info("Painting stopped after {} ms (draining)", painted);
     }
 
     private void uponWorkloadTimer(WorkloadTimer timer, long timerId) {
@@ -450,9 +450,9 @@ public class CanvasApp extends GenericProtocol {
         if (workloadStartMillis < 0) {
             workloadStartMillis = now;
         }
+        // A duration is a SAFETY cap; the primary stop is the orchestrator's STOP signal.
         if (workloadDuration > 0 && now - workloadStartMillis > workloadDuration) {
-            cancelTimer(timerId);
-            logger.info("Workload finished after {} ms", now - workloadStartMillis);
+            stopPainting();
             return;
         }
         int x = ThreadLocalRandom.current().nextInt(canvas.getWidth());
