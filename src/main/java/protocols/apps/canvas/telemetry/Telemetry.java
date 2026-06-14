@@ -19,7 +19,14 @@ import org.apache.logging.log4j.Logger;
  *   <li><b>reliability</b> — {@code DELIVER} count per {@code op} across nodes ÷ live nodes;</li>
  *   <li><b>latency</b> — a node's {@code DELIVER} prefix-time minus the op's {@code BROADCAST} prefix-time;</li>
  *   <li><b>convergence</b> — all live nodes' final {@code DIGEST hash} agree;</li>
- *   <li><b>overlay health</b> — {@code VIEW size} stays within HyParView's active-view bound; {@code NEIGHBOR_*} churn.</li>
+ *   <li><b>overlay health</b> — {@code DIGEST view}/{@code peers} stay within HyParView's
+ *       active-view bound; {@code NEIGHBOR_*} churn; {@code peers} gives a time-aligned
+ *       active-view set for symmetry;</li>
+ *   <li><b>gossip vs. repair</b> — {@code SYNC_MERGE applied} counts ops a node obtained from a
+ *       snapshot (and AE) rather than gossip {@code DELIVER}, so coverage can be split into the
+ *       eager-push share and the state-reconciliation share;</li>
+ *   <li><b>readiness</b> — {@code PAINT_START stable} says whether the overlay was settled when a
+ *       node began broadcasting (an unsettled start loses gossip information).</li>
  * </ul>
  */
 public final class Telemetry {
@@ -50,12 +57,15 @@ public final class Telemetry {
 
     /**
      * Periodic convergence digest of the local canvas. {@code delivered} is this
-     * node's in-process count of distinct ops delivered — a robust coverage signal
-     * the analyzer cross-checks against the (higher-volume, loss-prone) DELIVER lines.
+     * node's in-process count of distinct ops delivered via gossip — a robust coverage
+     * signal the analyzer cross-checks against the (higher-volume, loss-prone) DELIVER
+     * lines. {@code peers} is the active-view set ({@code ip:port} joined by {@code ;},
+     * empty when the view is empty): a time-stamped membership snapshot from which the
+     * analyzer reconstructs active-view symmetry at a common instant, robust to churn.
      */
-    public void digest(long tick, long hash, int paintedCells, int activeView, long delivered) {
-        log.info("DIGEST node={} tick={} hash={} painted={} view={} delivered={}",
-                nodeId, tick, Long.toHexString(hash), paintedCells, activeView, delivered);
+    public void digest(long tick, long hash, int paintedCells, int activeView, long delivered, String peers) {
+        log.info("DIGEST node={} tick={} hash={} painted={} view={} delivered={} peers={}",
+                nodeId, tick, Long.toHexString(hash), paintedCells, activeView, delivered, peers);
     }
 
     public void neighborUp(String peer, int activeView) {
@@ -64,6 +74,33 @@ public final class Telemetry {
 
     public void neighborDown(String peer, int activeView) {
         log.info("NEIGHBOR_DOWN node={} peer={} view={}", nodeId, peer, activeView);
+    }
+
+    /** The local node began its paint workload. {@code stable} is whether the overlay
+     *  met the readiness gate (view filled, churn quiesced) or the wait timed out first. */
+    public void paintStart(int activeView, long sinceBootMs, boolean stable) {
+        log.info("PAINT_START node={} view={} sinceBootMs={} stable={}",
+                nodeId, activeView, sinceBootMs, stable);
+    }
+
+    /** This node asked {@code peer} for a canvas snapshot (point-to-point, once it has a neighbour). */
+    public void syncRequest(String peer) {
+        log.info("SYNC_REQUEST node={} peer={}", nodeId, peer);
+    }
+
+    /** This node served its canvas snapshot ({@code ops} winning ops) to {@code to}. */
+    public void syncServe(String to, int ops) {
+        log.info("SYNC_SERVE node={} to={} ops={}", nodeId, to, ops);
+    }
+
+    /**
+     * This node merged a snapshot reply from {@code from}: {@code ops} ops received,
+     * {@code applied} of them won LWW (state this node obtained by reconciliation rather
+     * than gossip — invisible to the {@code delivered} counter and DELIVER lines).
+     */
+    public void syncMerge(String from, int ops, int applied, int activeView) {
+        log.info("SYNC_MERGE node={} from={} ops={} applied={} view={}",
+                nodeId, from, ops, applied, activeView);
     }
 
     private static String toHex(int argb) {

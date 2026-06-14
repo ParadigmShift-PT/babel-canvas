@@ -13,6 +13,7 @@ import org.apache.logging.log4j.Logger;
 import protocols.apps.canvas.messages.CanvasSyncMessage;
 import protocols.apps.canvas.telemetry.Telemetry;
 import protocols.apps.canvas.timers.DigestTimer;
+import protocols.apps.canvas.timers.ReadinessTimer;
 import protocols.apps.canvas.timers.WorkloadTimer;
 import protocols.apps.canvas.ui.WebUi;
 import pt.paradigmshift.babel.eagerpush.EagerPushGossipBroadcast;
@@ -118,6 +119,29 @@ public class CanvasApp extends GenericProtocol {
     /** Default for {@link #PAR_WORKLOAD_START_DELAY}: {@value} ms. */
     public static final String DEFAULT_WORKLOAD_START_DELAY = "5000";
 
+    // ── Readiness gate ───────────────────────────────────────────────────────────
+    // Past the start-delay floor, defer the first paint until the LOCAL overlay has
+    // settled, so we don't broadcast onto a half-formed view and lose information that
+    // only state reconciliation could later recover. The gate is OFF (legacy behaviour:
+    // paint exactly at startDelay) when stabilizeView <= 0 and stabilizeQuietMs <= 0.
+
+    /** Property key — require at least this many active-view neighbours before painting; {@code <= 0} disables. */
+    public static final String PAR_WORKLOAD_STABILIZE_VIEW = "canvas.workload.stabilizeView";
+    /** Default for {@link #PAR_WORKLOAD_STABILIZE_VIEW}: {@value} (gate off). */
+    public static final String DEFAULT_WORKLOAD_STABILIZE_VIEW = "0";
+    /** Property key — require no neighbour churn for this long (ms) before painting; {@code <= 0} disables. */
+    public static final String PAR_WORKLOAD_STABILIZE_QUIET_MS = "canvas.workload.stabilizeQuietMs";
+    /** Default for {@link #PAR_WORKLOAD_STABILIZE_QUIET_MS}: {@value} ms (gate off). */
+    public static final String DEFAULT_WORKLOAD_STABILIZE_QUIET_MS = "0";
+    /** Property key — start painting anyway after waiting this long (ms) past the floor for the gate. */
+    public static final String PAR_WORKLOAD_STABILIZE_TIMEOUT_MS = "canvas.workload.stabilizeTimeoutMs";
+    /** Default for {@link #PAR_WORKLOAD_STABILIZE_TIMEOUT_MS}: {@value} ms. */
+    public static final String DEFAULT_WORKLOAD_STABILIZE_TIMEOUT_MS = "60000";
+    /** Property key — how often (ms) to re-check readiness while gating. */
+    public static final String PAR_WORKLOAD_STABILIZE_CHECK_MS = "canvas.workload.stabilizeCheckMs";
+    /** Default for {@link #PAR_WORKLOAD_STABILIZE_CHECK_MS}: {@value} ms. */
+    public static final String DEFAULT_WORKLOAD_STABILIZE_CHECK_MS = "500";
+
     private final Host myself;
     private final String nodeId;
     private final short broadcastProtoId;
@@ -132,6 +156,11 @@ public class CanvasApp extends GenericProtocol {
     private final long workloadPeriodMs;
     private final long workloadDuration;
     private final long workloadStartDelay;
+    private final int stabilizeView;
+    private final long stabilizeQuietMs;
+    private final long stabilizeTimeoutMs;
+    private final long stabilizeCheckMs;
+    private final boolean gateEnabled;
     private final boolean uiEnabled;
     private final int uiPort;
     private final boolean uiOpen;
@@ -148,8 +177,12 @@ public class CanvasApp extends GenericProtocol {
     private boolean channelReady = false;
     private boolean snapshotRequested = false;
     private long digestTick = 0;
+    private long bootMillis = -1;          // init() wall-clock — origin for readiness timing
+    private long lastChurnMillis = -1;     // last NeighborUp/Down — feeds the readiness quiet check
+    private long readinessStartMillis = -1; // first readiness poll — origin for the gate timeout
+    private boolean workloadStarted = false;
     private long workloadStartMillis = -1;
-    private long deliveredOps = 0; // distinct ops delivered locally (robust coverage signal)
+    private long deliveredOps = 0; // distinct ops delivered via gossip (robust coverage signal)
 
     private WebUi ui;
 
@@ -184,6 +217,11 @@ public class CanvasApp extends GenericProtocol {
         this.workloadPeriodMs = Math.max(1, 1000L / rate);
         this.workloadDuration = readLong(props, PAR_WORKLOAD_DURATION, DEFAULT_WORKLOAD_DURATION);
         this.workloadStartDelay = readLong(props, PAR_WORKLOAD_START_DELAY, DEFAULT_WORKLOAD_START_DELAY);
+        this.stabilizeView = readInt(props, PAR_WORKLOAD_STABILIZE_VIEW, DEFAULT_WORKLOAD_STABILIZE_VIEW);
+        this.stabilizeQuietMs = readLong(props, PAR_WORKLOAD_STABILIZE_QUIET_MS, DEFAULT_WORKLOAD_STABILIZE_QUIET_MS);
+        this.stabilizeTimeoutMs = readLong(props, PAR_WORKLOAD_STABILIZE_TIMEOUT_MS, DEFAULT_WORKLOAD_STABILIZE_TIMEOUT_MS);
+        this.stabilizeCheckMs = Math.max(1, readLong(props, PAR_WORKLOAD_STABILIZE_CHECK_MS, DEFAULT_WORKLOAD_STABILIZE_CHECK_MS));
+        this.gateEnabled = stabilizeView > 0 || stabilizeQuietMs > 0;
 
         this.resolutionMode = props.getProperty(EagerPushGossipBroadcast.PAR_PEER_ADDRESS_RESOLUTION,
                 EagerPushGossipBroadcast.DEFAULT_PEER_ADDRESS_RESOLUTION);
@@ -200,20 +238,31 @@ public class CanvasApp extends GenericProtocol {
 
         registerTimerHandler(DigestTimer.TIMER_ID, this::uponDigestTimer);
         registerTimerHandler(WorkloadTimer.TIMER_ID, this::uponWorkloadTimer);
+        registerTimerHandler(ReadinessTimer.TIMER_ID, this::uponReadinessTimer);
     }
 
     @Override
     public void init(Properties props) {
+        bootMillis = System.currentTimeMillis();
         telemetry.start(canvas.getWidth(), canvas.getHeight(), resolutionMode, fanout, antiEntropy);
 
         if (digestInterval > 0) {
             setupPeriodicTimer(new DigestTimer(), digestInterval, digestInterval);
         }
         if (workloadEnabled) {
-            logger.info("Headless workload: {} op(s) every {} ms, start +{} ms, duration {}",
+            logger.info("Headless workload: {} op(s) every {} ms, start +{} ms, duration {}{}",
                     1, workloadPeriodMs, workloadStartDelay,
-                    workloadDuration > 0 ? workloadDuration + " ms" : "unbounded");
-            setupPeriodicTimer(new WorkloadTimer(), workloadStartDelay, workloadPeriodMs);
+                    workloadDuration > 0 ? workloadDuration + " ms" : "unbounded",
+                    gateEnabled ? " — gated on view>=" + stabilizeView + ", quiet " + stabilizeQuietMs
+                            + "ms (cap " + stabilizeTimeoutMs + "ms)" : "");
+            if (gateEnabled) {
+                // Past the start-delay floor, poll readiness; uponReadinessTimer begins
+                // painting once the local overlay settles, or when the cap fires.
+                setupPeriodicTimer(new ReadinessTimer(), workloadStartDelay, stabilizeCheckMs);
+            } else {
+                // Legacy/demo path: paint exactly at the floor.
+                setupTimer(new ReadinessTimer(), workloadStartDelay);
+            }
         }
         if (uiEnabled) {
             ui = new WebUi(uiPort, this);
@@ -259,14 +308,33 @@ public class CanvasApp extends GenericProtocol {
     private void uponNeighborUp(NeighborUp notification, short sourceProto) {
         Host h = notification.getPeer();
         neighbours.add(h);
-        telemetry.neighborUp(h.getAddress().getHostAddress() + ":" + h.getPort(), neighbours.size());
+        lastChurnMillis = System.currentTimeMillis();
+        telemetry.neighborUp(hostId(h), neighbours.size());
         maybeRequestSnapshot();
     }
 
     private void uponNeighborDown(NeighborDown notification, short sourceProto) {
         Host h = notification.getPeer();
         neighbours.remove(h);
-        telemetry.neighborDown(h.getAddress().getHostAddress() + ":" + h.getPort(), neighbours.size());
+        lastChurnMillis = System.currentTimeMillis();
+        telemetry.neighborDown(hostId(h), neighbours.size());
+    }
+
+    /** {@code ip:port} identity of a peer — matches this node's own {@link #nodeId} format. */
+    private static String hostId(Host h) {
+        return h.getAddress().getHostAddress() + ":" + h.getPort();
+    }
+
+    /** Active-view set as {@code ip:port} joined by {@code ;} (empty string when no neighbours). */
+    private String peersString() {
+        StringBuilder b = new StringBuilder();
+        for (Host h : neighbours) {
+            if (b.length() > 0) {
+                b.append(';');
+            }
+            b.append(hostId(h));
+        }
+        return b.toString();
     }
 
     /* ───────────────────────── Snapshot sync (point-to-point) ──────────────────── */
@@ -282,6 +350,7 @@ public class CanvasApp extends GenericProtocol {
         }
         snapshotRequested = true;
         sendMessage(channelId, new CanvasSyncMessage(CanvasSyncMessage.Kind.REQUEST, null), peer);
+        telemetry.syncRequest(hostId(peer));
         logger.debug("Requested canvas snapshot from {}", peer);
     }
 
@@ -290,12 +359,18 @@ public class CanvasApp extends GenericProtocol {
             case REQUEST -> {
                 CanvasSyncMessage reply = new CanvasSyncMessage(CanvasSyncMessage.Kind.REPLY, canvas.snapshotOps());
                 sendMessage(this.channelId, reply, from);
+                telemetry.syncServe(hostId(from), reply.getOps().size());
                 logger.debug("Served canvas snapshot ({} ops) to {}", reply.getOps().size(), from);
             }
             case REPLY -> {
-                int changed = canvas.mergeSnapshot(msg.getOps());
-                logger.debug("Merged snapshot from {}: {} of {} ops changed a cell",
-                        from, changed, msg.getOps().size());
+                // mergeSnapshot applies ops via LWW WITHOUT going through uponDeliver, so
+                // `applied` is state this node obtained by reconciliation, not gossip — it
+                // does NOT bump deliveredOps. SYNC_MERGE is how the analyzer separates the
+                // eager-push delivery share from the snapshot-repair share of convergence.
+                int ops = msg.getOps().size();
+                int applied = canvas.mergeSnapshot(msg.getOps());
+                telemetry.syncMerge(hostId(from), ops, applied, neighbours.size());
+                logger.debug("Merged snapshot from {}: {} of {} ops applied (LWW)", from, applied, ops);
             }
         }
     }
@@ -319,7 +394,55 @@ public class CanvasApp extends GenericProtocol {
 
     private void uponDigestTimer(DigestTimer timer, long timerId) {
         digestTick++;
-        telemetry.digest(digestTick, canvas.digest(), canvas.paintedCount(), neighbours.size(), deliveredOps);
+        telemetry.digest(digestTick, canvas.digest(), canvas.paintedCount(),
+                neighbours.size(), deliveredOps, peersString());
+    }
+
+    /**
+     * Readiness gate (see {@link ReadinessTimer}). When gating is on this fires
+     * periodically after the start-delay floor: it begins painting as soon as the local
+     * active view is filled and neighbour churn has quiesced, or when the timeout cap
+     * elapses (then flagged unstable). When gating is off it is a one-shot that just
+     * begins painting at the floor.
+     */
+    private void uponReadinessTimer(ReadinessTimer timer, long timerId) {
+        if (workloadStarted) {
+            cancelTimer(timerId);
+            return;
+        }
+        if (!gateEnabled) {
+            beginPainting(true);
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (readinessStartMillis < 0) {
+            readinessStartMillis = now;
+        }
+        boolean viewReady = neighbours.size() >= stabilizeView;
+        boolean quietReady = stabilizeQuietMs <= 0
+                || (lastChurnMillis >= 0 && now - lastChurnMillis >= stabilizeQuietMs);
+        boolean timedOut = now - readinessStartMillis >= stabilizeTimeoutMs;
+        if ((viewReady && quietReady) || timedOut) {
+            if (timedOut && !(viewReady && quietReady)) {
+                logger.warn("Readiness gate timed out after {} ms (view={}, quiet={}) — painting anyway",
+                        now - readinessStartMillis, neighbours.size(),
+                        lastChurnMillis < 0 ? "n/a" : (now - lastChurnMillis) + "ms");
+            }
+            cancelTimer(timerId);
+            beginPainting(viewReady && quietReady);
+        }
+    }
+
+    /** Emit PAINT_START and kick off the paint workload (idempotent). */
+    private void beginPainting(boolean stable) {
+        if (workloadStarted) {
+            return;
+        }
+        workloadStarted = true;
+        long sinceBoot = bootMillis < 0 ? -1 : System.currentTimeMillis() - bootMillis;
+        telemetry.paintStart(neighbours.size(), sinceBoot, stable);
+        logger.info("Painting begins: view={} sinceBoot={}ms stable={}", neighbours.size(), sinceBoot, stable);
+        setupPeriodicTimer(new WorkloadTimer(), 0, workloadPeriodMs);
     }
 
     private void uponWorkloadTimer(WorkloadTimer timer, long timerId) {
