@@ -23,12 +23,13 @@ protocols working together:
 
 ## Quickstart
 
-Requires **Java 17+**. Grab `babel-canvas.jar` from the
+Requires **Java 17+**. Build it (`mvn package`) — the jar lands at
+`target/babel-canvas.jar` — or download it from the
 [latest release](https://github.com/ParadigmShift-PT/babel-canvas/releases/latest)
-(or [build it](#building-from-source)), then run one node — it auto-opens its UI:
+(then drop the `target/` from the commands below). Run one node — it auto-opens its UI:
 
 ```bash
-java -jar babel-canvas.jar          # one node; auto-opens its UI at http://localhost:8000/
+java -jar target/babel-canvas.jar          # one node; auto-opens its UI at http://localhost:8000/
 ```
 
 That paints locally. To connect more nodes, bootstrap the overlay one of two ways
@@ -39,26 +40,31 @@ connects; no discovery to configure:
 
 ```bash
 # first node — the one others contact
-java -jar babel-canvas.jar babel.address=127.0.0.1 babel.port=6000 HyParView.contact=none
+java -jar target/babel-canvas.jar babel.address=127.0.0.1 babel.port=6000 HyParView.contact=none
 # second node — dials the first to join
-java -jar babel-canvas.jar babel.address=127.0.0.1 babel.port=6010 HyParView.contact=127.0.0.1:6000
+java -jar target/babel-canvas.jar babel.address=127.0.0.1 babel.port=6010 HyParView.contact=127.0.0.1:6000
 ```
 
-**Multicast auto-discovery** — no addresses to type, but same-LAN only and opt-in
-(name the discovery protocol on the command line):
+**Multicast auto-discovery** — for peers on the **same LAN** (typically different
+machines); no addresses to type, but **best-effort** and opt-in (name the discovery
+protocol on the command line):
 
 ```bash
 DISC=babel.discovery=pt.unl.fct.di.novasys.babel.core.protocols.discovery.MulticastDiscoveryProtocol
-java -jar babel-canvas.jar $DISC                                               # machine A
-java -jar babel-canvas.jar $DISC babel.port=6010 babel.discovery.unicast.port=1027   # 2nd node, same host
+java -jar target/babel-canvas.jar $DISC                                               # machine A
+java -jar target/babel-canvas.jar $DISC babel.port=6010 babel.discovery.unicast.port=1027   # 2nd node, same host
 ```
 
 Each node serves a web UI and opens your browser at it on startup
 (`canvas.ui.open=false` suppresses that). Run several nodes on one machine with a
 distinct `babel.port` **spaced by ≥ 10** (the gossip channel binds `babel.port+1`);
-the web-UI port follows automatically (`babel.port + 2000`). Multicast can be
-blocked locally (VPN, firewall, multiple NICs, macOS Local Network permission) — if
-nodes don't find each other that way, use explicit contact.
+the web-UI port follows automatically (`babel.port + 2000`).
+
+> **Discovery tip.** For several nodes on **one machine**, use **explicit contact**
+> (above) — multicast usually does *not* loop back between local processes, and is
+> often blocked by VPNs, firewalls, multiple NICs, or macOS' Local Network permission.
+> Reach for multicast only across real LAN hosts; if peers still don't find each other,
+> fall back to explicit contact.
 
 ---
 
