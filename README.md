@@ -10,8 +10,7 @@ order the updates arrive in.
 Unlike the chat demo ([`babel-demo`](https://github.com/ParadigmShift-PT/babel-demo)),
 which runs on simplified teaching protocols, babel-canvas composes the **real
 ParadigmShift overlay stack** — so it doubles as a live showcase of those
-protocols working together and as the workload for the
-`babel-canvas-experiments` correctness harness:
+protocols working together:
 
 1. **HyParView** — partial-view membership (the gossip overlay) with LAN auto-discovery;
 2. **eager-push gossip broadcast** — disseminates each paint operation to the overlay;
@@ -95,8 +94,8 @@ Two extras make it pleasant and robust:
 ## Configuration
 
 Every value can come from `babel_config.properties` (bundled) or be overridden on
-the command line as `key=value`. The same mechanism is how the experiments
-harness sweeps parameters.
+the command line as `key=value` — which also makes the demo easy to script for
+automated, headless runs.
 
 ### Process-wide & overlay
 
@@ -134,9 +133,8 @@ writes a small machine-readable telemetry file (`babel-canvas-telemetry-<port>.l
 — one structured event per line (`BROADCAST` / `DELIVER` / `DIGEST` / `NEIGHBOR_*`).
 That's enough to measure, automatically, that the demo really does what it claims:
 that every paint reaches every node (reliability), how fast (latency), and that all
-nodes converge to the same image. The companion **`babel-canvas-experiments`**
-project runs the demo across many configurations and checks exactly that — so the
-canvas is also how we validate the membership and gossip protocols underneath it.
+nodes converge to the same image — enough for an external driver to verify,
+automatically, the membership and gossip protocols underneath it.
 
 ---
 
